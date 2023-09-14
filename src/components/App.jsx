@@ -1,82 +1,92 @@
 import { Component } from 'react';
-import { ContactForm } from './Form/ContactForm';
-import { ContactList } from './Contacts/ContactsList';
+import toast, { Toaster } from 'react-hot-toast';
+import { Searchbar } from './Searchbar/Searchbar';
+import { ImageGallery } from './ImageGallery/ImageGallery';
 import { GlobalStyle } from './GlobalStyle';
 import { Layout } from './Layout';
-import { nanoid } from 'nanoid';
-import { Filter } from './Filter/Filter';
+import { dataQuery } from './api';
+import { Loader } from './Loader/Loader';
+import { Button } from './ButtonLoadMore/Button';
+import { Modal } from './Modal/Modal';
 
 export class App extends Component {
   state = {
-    contacts: [
-      { id: 'id-1', name: 'Rosie Simpson', number: '459-12-56' },
-      { id: 'id-2', name: 'Hermione Kline', number: '443-89-12' },
-      { id: 'id-3', name: 'Eden Clements', number: '645-17-79' },
-      { id: 'id-4', name: 'Annie Copeland', number: '227-91-26' },
-    ],
-    filter: '',
+    query: '',
+    images: [],
+    page: 1,
+    isLoading: false,
+    error: false,
+    selectedImage: null,
+    totalImages: 0,
   };
 
-  componentDidMount() {
-    const savedContacts = localStorage.getItem('contacts');
-    if (savedContacts !== null) {
-      this.setState({
-        contacts: JSON.parse(savedContacts),
-      });
+  async componentDidUpdate(prevProps, prevState) {
+    const { query, page } = this.state;
+    if (query !== prevState.query || page !== prevState.page) {
+      try {
+        this.setState({ isLoading: true, error: false });
+        const userQuery = await dataQuery(query, page);
+        this.setState(prevState => ({
+          images: [...prevState.images, ...userQuery.hits],
+          totalImages: userQuery.totalHits,
+        }));
+        if (this.state.page === 1) {
+          toast.success('Here is was we found for your request.');
+        }
+      } catch (error) {
+        this.setState({ error: true });
+        toast.error('Oops! Something went wrong. Please reload the page.');
+      } finally {
+        this.setState({ isLoading: false });
+      }
     }
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    if (this.state.contacts !== prevState.contacts) {
-      localStorage.setItem('contacts', JSON.stringify(this.state.contacts));
-    }
-  }
-
-  addContact = ({ name, number }) => {
-    const dublicateContact = this.state.contacts.some(
-      contact => contact.name.toLowerCase() === name.toLowerCase()
-    );
-
-    if (dublicateContact) {
-      alert(`${name} already in contact list!`);
+  handleSubmit = evt => {
+    evt.preventDefault();
+    const userSearch = evt.target.elements.query.value.trim();
+    if (!userSearch) {
+      toast.error('Please enter your request.');
       return;
     }
+    this.setState({
+      query: userSearch,
+      images: [],
+      page: 1,
+      totalImages: 0,
+    });
+    evt.target.reset();
+  };
 
-    const newContact = {
-      id: nanoid(),
-      name,
-      number,
-    };
-
+  handleLoadMore = () => {
     this.setState(prevState => ({
-      contacts: [...prevState.contacts, newContact],
+      page: prevState.page + 1,
     }));
   };
 
-  handleFindContact = evt => {
-    this.setState({ filter: evt.target.value });
+  openModal = image => {
+    this.setState({ selectedImage: image });
   };
 
-  handleDeleteContact = id => {
-    this.setState(prevState => ({
-      contacts: prevState.contacts.filter(contact => contact.id !== id),
-    }));
+  closeModal = () => {
+    this.setState({ selectedImage: null });
   };
 
   render() {
-    const { contacts, filter } = this.state;
-    const filteredContacts = contacts.filter(contact =>
-      contact.name.toLowerCase().includes(filter.toLowerCase())
-    );
+    const { images, isLoading, selectedImage, totalImages } = this.state;
     return (
       <Layout>
-        <ContactForm onAdd={this.addContact} />
-        <Filter filter={filter} onFilterContact={this.handleFindContact} />
-        {filteredContacts.length > 0 && (
-          <ContactList
-            contacts={filteredContacts}
-            onDelete={this.handleDeleteContact}
-          />
+        <Searchbar onSubmit={this.handleSubmit} />
+        {isLoading && <Loader />}
+        {images.length > 0 && (
+          <ImageGallery images={images} onImageClick={this.openModal} />
+        )}
+        {images.length !== totalImages && !isLoading && (
+          <Button onClick={this.handleLoadMore} />
+        )}
+        <Toaster />
+        {selectedImage && (
+          <Modal closeModal={this.closeModal} selectedImage={selectedImage} />
         )}
         <GlobalStyle />
       </Layout>
